@@ -1,0 +1,20 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    database_url: str
+    secret_key: str
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 1440
+
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash-lite"
+
+    class Config:
+        env_file = ".env"
+
+
+settings = Settings()
