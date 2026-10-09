@@ -150,3 +150,13 @@ class AssistantQuestion(BaseModel):
 
 class AssistantAnswer(BaseModel):
     answer: str
+
+
+# --- Upload de fotos (Cloudinary, upload assinado) ---
+
+class UploadSignature(BaseModel):
+    upload_url: str
+    api_key: str
+    timestamp: int
+    folder: str
+    signature: str

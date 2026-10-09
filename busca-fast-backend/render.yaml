@@ -16,3 +16,9 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        value: i2hdp1bl
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

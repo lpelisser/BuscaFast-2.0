@@ -2,7 +2,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 
 from app.database import Base, engine
-from app.routers import assistant, auth, feed, products, users
+from app.routers import assistant, auth, feed, products, uploads, users
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,6 +20,7 @@ app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(feed.router)
 app.include_router(assistant.router)
+app.include_router(uploads.router)
 
 
 @app.get("/")
