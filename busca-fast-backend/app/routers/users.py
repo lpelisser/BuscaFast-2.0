@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Category, User, UserPreference
-from app.schemas import CategoryOut, PreferencesUpdate, UserOut
+from app.schemas import AdvertiserActivate, CategoryOut, PreferencesUpdate, UserOut
 
 router = APIRouter(prefix="/users", tags=["Usuário e Preferências"])
 
@@ -59,3 +59,17 @@ def skip_preferences(
     pref.onboarding_completed = True
     db.commit()
     return {"status": "onboarding_pulado"}
+
+
+@router.post("/me/anunciante", response_model=UserOut)
+def tornar_anunciante(
+    payload: AdvertiserActivate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ativa o perfil de anunciante (intermediário) e define o nome da loja."""
+    current_user.account_type = "anunciante"
+    current_user.store_name = payload.store_name.strip()
+    db.commit()
+    db.refresh(current_user)
+    return current_user

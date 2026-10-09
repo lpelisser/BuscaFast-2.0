@@ -22,6 +22,8 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     accepted_terms = Column(Boolean, default=False, nullable=False)
     is_verified_seller = Column(Boolean, default=False)
+    account_type = Column(String(20), nullable=False, default="comprador", server_default="comprador")
+    store_name = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     preferences = relationship("UserPreference", back_populates="user", uselist=False)
@@ -70,6 +72,7 @@ class Product(Base):
     description = Column(Text, nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     outlet_link = Column(String(500), nullable=True)
+    outlet_clicks = Column(Integer, nullable=False, default=0, server_default="0")
     seller_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -79,6 +82,24 @@ class Product(Base):
     images = relationship("ProductImage", back_populates="product")
     comments = relationship("Comment", back_populates="product")
     likes = relationship("Like", back_populates="product")
+
+    @property
+    def seller_name(self) -> str:
+        if self.seller is None:
+            return ""
+        return self.seller.store_name or self.seller.full_name
+
+    @property
+    def seller_verified(self) -> bool:
+        return bool(self.seller and self.seller.is_verified_seller)
+
+    @property
+    def likes_count(self) -> int:
+        return len(self.likes)
+
+    @property
+    def comments_count(self) -> int:
+        return len(self.comments)
 
 
 class ProductImage(Base):

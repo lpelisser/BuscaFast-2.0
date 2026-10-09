@@ -1,12 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Favorite, Product, ProductImage, User
-from app.schemas import ProductCreate, ProductOut
+from app.models import Comment, Favorite, Like, Product, ProductImage, User
+from app.schemas import OutletClick, ProductCreate, ProductOut, ProductUpdate
 
 router = APIRouter(prefix="/products", tags=["Produtos"])
+
+
+def _exige_anunciante(user: User) -> None:
+    if user.account_type != "anunciante":
+        raise HTTPException(
+            status_code=403,
+            detail="Ative sua conta de anunciante para publicar produtos",
+        )
+
+
+def _produto_do_dono(db: Session, product_id: int, user: User) -> Product:
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    if product.seller_id != user.id:
+        raise HTTPException(status_code=403, detail="Este produto pertence a outro anunciante")
+    return product
 
 
 @router.get("/feed", response_model=list[ProductOut])
@@ -14,6 +32,20 @@ def feed_intuitivo(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)
     """Scroll vertical estilo Instagram/Reels — sem filtro de categoria."""
     return (
         db.query(Product)
+        .order_by(Product.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+@router.get("/busca", response_model=list[ProductOut])
+def buscar(q: str, skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
+    """Busca por texto no título e na descrição."""
+    termo = f"%{q.strip()}%"
+    return (
+        db.query(Product)
+        .filter(or_(Product.title.ilike(termo), Product.description.ilike(termo)))
         .order_by(Product.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -31,6 +63,19 @@ def meus_favoritos(
     ]
 
 
+@router.get("/meus", response_model=list[ProductOut])
+def meus_produtos(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """Painel do anunciante: seus produtos, com curtidas, comentários e cliques no link."""
+    return (
+        db.query(Product)
+        .filter(Product.seller_id == current_user.id)
+        .order_by(Product.created_at.desc())
+        .all()
+    )
+
+
 @router.get("/categoria/{category_id}", response_model=list[ProductOut])
 def produtos_por_categoria(
     category_id: int, skip: int = 0, limit: int = 20, db: Session = Depends(get_db)
@@ -46,7 +91,7 @@ def produtos_por_categoria(
 
 @router.get("/{product_id}", response_model=ProductOut)
 def detalhe_produto(product_id: int, db: Session = Depends(get_db)):
-    """Página do Produto: galeria, preço, vendedor, link outlet, avaliações (via /feed comments)."""
+    """Página do Produto: galeria, preço, vendedor, link do site, avaliações."""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
@@ -59,6 +104,8 @@ def criar_produto(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _exige_anunciante(current_user)
+
     product = Product(
         title=payload.title,
         description=payload.description,
@@ -76,6 +123,57 @@ def criar_produto(
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.put("/{product_id}", response_model=ProductOut)
+def editar_produto(
+    product_id: int,
+    payload: ProductUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    product = _produto_do_dono(db, product_id, current_user)
+    dados = payload.model_dump(exclude_unset=True)
+
+    novas_imagens = dados.pop("image_urls", None)
+    for campo, valor in dados.items():
+        setattr(product, campo, valor)
+
+    if novas_imagens is not None:
+        db.query(ProductImage).filter(ProductImage.product_id == product.id).delete()
+        for i, url in enumerate(novas_imagens):
+            db.add(ProductImage(product_id=product.id, url=url, position=i))
+
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@router.delete("/{product_id}", status_code=204)
+def excluir_produto(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    product = _produto_do_dono(db, product_id, current_user)
+    db.query(Comment).filter(Comment.product_id == product.id).delete()
+    db.query(Like).filter(Like.product_id == product.id).delete()
+    db.query(Favorite).filter(Favorite.product_id == product.id).delete()
+    db.query(ProductImage).filter(ProductImage.product_id == product.id).delete()
+    db.delete(product)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{product_id}/clique", response_model=OutletClick)
+def registrar_clique(product_id: int, db: Session = Depends(get_db)):
+    """Chame ao tocar em "Ir até o site": conta o clique do anunciante e devolve o link."""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product or not product.outlet_link:
+        raise HTTPException(status_code=404, detail="Produto sem link disponível")
+    product.outlet_clicks = (product.outlet_clicks or 0) + 1
+    db.commit()
+    return OutletClick(outlet_link=product.outlet_link)
 
 
 @router.post("/{product_id}/favoritar")
