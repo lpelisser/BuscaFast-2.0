@@ -122,6 +122,12 @@ class ProductOut(BaseModel):
     created_at: datetime.datetime
 
 
+class SearchOut(BaseModel):
+    query: str
+    resultados: list[ProductOut]
+    parecidos: list[ProductOut]
+
+
 class OutletClick(BaseModel):
     outlet_link: str
 

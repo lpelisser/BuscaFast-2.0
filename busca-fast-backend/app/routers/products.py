@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Comment, Favorite, Like, Product, ProductImage, User
-from app.schemas import OutletClick, ProductCreate, ProductOut, ProductUpdate
+from app.schemas import OutletClick, ProductCreate, ProductOut, ProductUpdate, SearchOut
+from app.search import parecidos_do_produto, pesquisar
 
 router = APIRouter(prefix="/products", tags=["Produtos"])
 
@@ -53,6 +54,18 @@ def buscar(q: str, skip: int = 0, limit: int = 20, db: Session = Depends(get_db)
     )
 
 
+@router.get("/pesquisar", response_model=SearchOut)
+def pesquisar_produtos(q: str, limit: int = 20, db: Session = Depends(get_db)):
+    """Pesquisa inteligente: `resultados` (batem com o texto) e `parecidos`
+    (mesma categoria dos melhores resultados, ordenados por semelhança e preço)."""
+    q = q.strip()
+    if len(q) < 2:
+        raise HTTPException(status_code=422, detail="Digite pelo menos 2 letras para pesquisar")
+    limit = max(1, min(limit, 50))
+    resultados, parecidos = pesquisar(db, q, limit)
+    return SearchOut(query=q, resultados=resultados, parecidos=parecidos)
+
+
 @router.get("/me/favoritos", response_model=list[ProductOut])
 def meus_favoritos(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
@@ -96,6 +109,15 @@ def detalhe_produto(product_id: int, db: Session = Depends(get_db)):
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     return product
+
+
+@router.get("/{product_id}/parecidos", response_model=list[ProductOut])
+def produtos_parecidos(product_id: int, limit: int = 10, db: Session = Depends(get_db)):
+    """"Você também pode gostar": mesma categoria, com palavras e preço próximos."""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    return parecidos_do_produto(db, product, max(1, min(limit, 30)))
 
 
 @router.post("", response_model=ProductOut, status_code=201)
